@@ -7,8 +7,12 @@ import LoginModalController from '@/components/LoginModalController' // ⬅️ l
 import { Suspense } from 'react' // ⬅️ NYTT
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.hemida.se'),
   title: 'Hemida',
   description: 'Hitta din bostad – till salu och uthyres',
+  alternates: {
+    canonical: '/',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
