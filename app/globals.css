@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Anpassade lager ---- */
+@layer base {
+  /* Formelement – kompaktare standard */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="search"],
+  select,
+  textarea {
+    @apply w-full rounded-lg border border-slate-300 bg-white text-[14px] text-slate-900;
+  }
+  input:not([type="checkbox"]):not([type="radio"]),
+  select { @apply h-9 px-2.5; }
+  textarea { @apply px-3 py-2; }
+
+  input::placeholder, textarea::placeholder { @apply text-slate-400; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex h-10 w-full items-center justify-center rounded-lg
+           bg-[var(--hemida)] px-4 text-white text-[15px] font-semibold shadow-md
+           transition hover:brightness-110 active:brightness-95 disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  .chip {
+    @apply inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white
+           px-2.5 text-[14px] font-semibold text-slate-800 shadow-sm
+           hover:border-[var(--hemida)] hover:text-[var(--hemida)] transition;
+  }
+  .chip--active {
+    @apply border-[var(--hemida)] text-[var(--hemida)];
+    background: var(--hemida-soft);
+  }
+
+  .card {
+    @apply rounded-2xl bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5;
+  }
+
+  .field-label { @apply mb-1 block text-[12.5px] font-semibold text-slate-800; }
+
+  .search-row {
+    @apply flex h-9 items-center gap-2 rounded-lg border border-slate-300 px-2.5 bg-white overflow-hidden;
+  }
+  .search-row:focus-within { @apply border-[var(--hemida)]; }
+}
