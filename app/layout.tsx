@@ -3,7 +3,8 @@ import './globals.css'
 import type { Metadata } from 'next'
 import Image from 'next/image'
 import Header from '@/components/Header'
-import LoginModalController from '@/components/LoginModalController' // ⬅️ NY: lyssnar på open-login-modal
+import LoginModalController from '@/components/LoginModalController' // ⬅️ lyssnar på open-login-modal
+import { Suspense } from 'react' // ⬅️ NYTT
 
 export const metadata: Metadata = {
   title: 'Hemida',
@@ -34,7 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {/* Sidinnehåll */}
         <main className="relative z-10 backdrop-blur-sm">
-          {children}
+          <Suspense fallback={null}>
+            {children}
+          </Suspense>
         </main>
 
         {/* Global controller som kan öppna LoginModal från var som helst */}
