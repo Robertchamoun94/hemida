@@ -21,7 +21,6 @@ export default function MinaAnnonserPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // — Auth-kontroll (samma beteende som tidigare)
   useEffect(() => {
     let unsub = () => {}
     ;(async () => {
@@ -40,7 +39,6 @@ export default function MinaAnnonserPage() {
     return () => unsub()
   }, [router])
 
-  // — Hämta mina annonser (både till salu & uthyrning)
   useEffect(() => {
     if (auth !== 'authed') return
     void fetchAll()
@@ -56,7 +54,6 @@ export default function MinaAnnonserPage() {
     userId: string | null,
     email: string | null
   ) {
-    // 1) Pröva vanliga ägarkolumner – om kolumn saknas hoppar vi vidare.
     const candidates: Array<{ col: string; val: string | null }> = [
       { col: 'created_by', val: userId },
       { col: 'owner_id', val: userId },
@@ -66,9 +63,6 @@ export default function MinaAnnonserPage() {
 
     for (const c of candidates) {
       if (!c.val) continue
-
-      // Viktigt: typ-casta supabase och frågan till "any" eftersom vi använder
-      // dynamiska tabell- och kolumnnamn. Detta påverkar inte logiken/funktionen.
       const query = (supabase as any)
         .from(table as any)
         .select('id, title, created_at' as any)
@@ -76,20 +70,13 @@ export default function MinaAnnonserPage() {
         .order('created_at', { ascending: false } as any)
 
       const { data, error } = await query
-
       if (error) {
-        if (isMissingColumn(error)) {
-          // Prova nästa kandidat
-          continue
-        }
-        // Annat fel – bubbla upp
+        if (isMissingColumn(error)) continue
         throw error
       }
-      // Hittade något → returnera direkt (även om 0 rader fortsätter vi prova nästa)
       if (Array.isArray(data) && data.length > 0) return data
     }
 
-    // 2) Fallback: hämta rader som RLS ändå tillåter (utan extra filter)
     const { data, error } = await (supabase as any)
       .from(table as any)
       .select('id, title, created_at' as any)
@@ -102,16 +89,12 @@ export default function MinaAnnonserPage() {
     setLoading(true)
     setError(null)
     try {
-      // Läs inloggad användare (id + email)
       const { data: udata, error: uerr } = await supabase.auth.getUser()
       if (uerr) throw uerr
       const userId = udata.user?.id ?? null
       const email = udata.user?.email ?? null
 
-      // Till salu
       const sale = await fetchForTable('annonser', userId, email)
-
-      // Uthyres
       const rent = await fetchForTable('uthyrning', userId, email)
 
       const merged: Item[] = [
@@ -139,16 +122,24 @@ export default function MinaAnnonserPage() {
     }
   }
 
+  // ENDY: endast denna funktion är ändrad – nu anropas vår API-route
   async function handleDelete(item: Item) {
-    const ok = confirm('Vill du ta bort den här annonsen? Detta går inte att ångra.')
+    const ok = confirm('Vill du ta bort den här annonsen? Alla bilder raderas. Detta går inte att ångra.')
     if (!ok) return
-    const { error } = await supabase.from(item.table).delete().eq('id', item.id)
-    if (error) {
-      alert(error.message || 'Kunde inte ta bort annonsen.')
-      return
+    try {
+      const res = await fetch('/api/ads/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id, table: item.table }),
+      })
+      if (!res.ok) {
+        const msg = await res.text()
+        throw new Error(msg || 'Kunde inte ta bort annonsen.')
+      }
+      await fetchAll()
+    } catch (e: any) {
+      alert(e?.message || 'Kunde inte ta bort annonsen.')
     }
-    // Uppdatera listan
-    await fetchAll()
   }
 
   if (auth === 'checking') {
@@ -206,23 +197,18 @@ export default function MinaAnnonserPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Gå till annons */}
                   <a
                     href={it.table === 'annonser' ? `/annonser/${it.id}` : `/uthyrning/${it.id}`}
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Gå till annons
                   </a>
-
-                  {/* Redigera */}
                   <a
                     href={it.table === 'annonser' ? `/annonser/${it.id}/redigera` : `/uthyrning/${it.id}/redigera`}
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Redigera
                   </a>
-
-                  {/* Ta bort */}
                   <button
                     type="button"
                     onClick={() => handleDelete(it)}
