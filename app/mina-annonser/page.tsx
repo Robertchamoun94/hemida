@@ -35,7 +35,7 @@ export default function MinaAnnonserPage() {
       const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
         if (!s) router.replace('/')
       })
-      unsub = () => sub.subscription.unsubscribe()
+      unsub = () => sub?.subscription.unsubscribe()
     })()
     return () => unsub()
   }, [router])
@@ -46,36 +46,86 @@ export default function MinaAnnonserPage() {
     void fetchAll()
   }, [auth])
 
+  const isMissingColumn = (err: any) => {
+    const msg = `${err?.message ?? ''} ${err?.details ?? ''} ${err?.hint ?? ''}`.toLowerCase()
+    return msg.includes('column') && msg.includes('does not exist')
+  }
+
+  async function fetchForTable(
+    table: 'annonser' | 'uthyrning',
+    userId: string | null,
+    email: string | null
+  ) {
+    // 1) Pröva vanliga ägarkolumner – om kolumn saknas hoppar vi vidare.
+    const candidates: Array<{ col: string; val: string | null }> = [
+      { col: 'created_by', val: userId },
+      { col: 'owner_id', val: userId },
+      { col: 'user_id', val: userId },
+      { col: 'contact_email', val: email },
+    ]
+
+    for (const c of candidates) {
+      if (!c.val) continue
+
+      // Viktigt: typ-casta supabase och frågan till "any" eftersom vi använder
+      // dynamiska tabell- och kolumnnamn. Detta påverkar inte logiken/funktionen.
+      const query = (supabase as any)
+        .from(table as any)
+        .select('id, title, created_at' as any)
+        .eq(c.col as any, c.val as any)
+        .order('created_at', { ascending: false } as any)
+
+      const { data, error } = await query
+
+      if (error) {
+        if (isMissingColumn(error)) {
+          // Prova nästa kandidat
+          continue
+        }
+        // Annat fel – bubbla upp
+        throw error
+      }
+      // Hittade något → returnera direkt (även om 0 rader fortsätter vi prova nästa)
+      if (Array.isArray(data) && data.length > 0) return data
+    }
+
+    // 2) Fallback: hämta rader som RLS ändå tillåter (utan extra filter)
+    const { data, error } = await (supabase as any)
+      .from(table as any)
+      .select('id, title, created_at' as any)
+      .order('created_at', { ascending: false } as any)
+    if (error) throw error
+    return data ?? []
+  }
+
   async function fetchAll() {
     setLoading(true)
     setError(null)
     try {
+      // Läs inloggad användare (id + email)
+      const { data: udata, error: uerr } = await supabase.auth.getUser()
+      if (uerr) throw uerr
+      const userId = udata.user?.id ?? null
+      const email = udata.user?.email ?? null
+
       // Till salu
-      const { data: sale, error: e1 } = await supabase
-        .from('annonser')
-        .select('id, title, created_at')
-        .order('created_at', { ascending: false })
-      if (e1) throw e1
+      const sale = await fetchForTable('annonser', userId, email)
 
       // Uthyres
-      const { data: rent, error: e2 } = await supabase
-        .from('uthyrning')
-        .select('id, title, created_at')
-        .order('created_at', { ascending: false })
-      if (e2) throw e2
+      const rent = await fetchForTable('uthyrning', userId, email)
 
       const merged: Item[] = [
-        ...(sale ?? []).map((r) => ({
+        ...(sale ?? []).map((r: any) => ({
           id: String(r.id),
-          title: (r as any).title ?? null,
-          created_at: String((r as any).created_at),
+          title: r?.title ?? null,
+          created_at: String(r?.created_at),
           kind: 'sale' as const,
           table: 'annonser' as const,
         })),
-        ...(rent ?? []).map((r) => ({
+        ...(rent ?? []).map((r: any) => ({
           id: String(r.id),
-          title: (r as any).title ?? null,
-          created_at: String((r as any).created_at),
+          title: r?.title ?? null,
+          created_at: String(r?.created_at),
           kind: 'rent' as const,
           table: 'uthyrning' as const,
         })),
@@ -156,13 +206,23 @@ export default function MinaAnnonserPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Justera länkarna om du har andra redigeringsrutter */}
+                  {/* Gå till annons */}
+                  <a
+                    href={it.table === 'annonser' ? `/annonser/${it.id}` : `/uthyrning/${it.id}`}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Gå till annons
+                  </a>
+
+                  {/* Redigera */}
                   <a
                     href={it.table === 'annonser' ? `/annonser/${it.id}/redigera` : `/uthyrning/${it.id}/redigera`}
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Redigera
                   </a>
+
+                  {/* Ta bort */}
                   <button
                     type="button"
                     onClick={() => handleDelete(it)}
