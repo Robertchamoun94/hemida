@@ -142,7 +142,20 @@ function SignupForm(p: { onToLogin: () => void }) {
               emailRedirectTo: `${site}/auth/confirm`
             }
           })
-          if (error) { setErr(error.message || 'Registrering misslyckades.'); return }
+          // ---- MODIFIERING: bättre felmeddelande vid rate-limit ----
+          if (error) {
+            const m = (error.message || '').toLowerCase()
+            if (m.includes('rate limit')) {
+              setErr(
+                'Vi har nyligen skickat ett verifikationsmejl till den här adressen. ' +
+                'Vänta 1–2 minuter och försök igen – och titta även i Skräppost/Spam.'
+              )
+            } else {
+              setErr(error.message || 'Registrering misslyckades.')
+            }
+            return
+          }
+          // ----------------------------------------------------------
           setMsg('Verifieringslänk skickad! Kontrollera din inkorg och bekräfta kontot. Hittar du inte mejlet? Titta även i Skräppost/Spam”.')
         } catch (e: any) {
           setErr(e?.message || 'Ett fel uppstod vid registrering.')
