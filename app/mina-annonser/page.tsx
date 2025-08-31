@@ -11,7 +11,7 @@ type Item = {
   title: string | null
   created_at: string
   kind: 'sale' | 'rent'
-  table: 'annonser' | 'uthyrning'
+  table: 'annonser' | 'uthyrning' | 'listings'
 }
 
 export default function MinaAnnonserPage() {
@@ -21,6 +21,7 @@ export default function MinaAnnonserPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // — Auth-kontroll (samma beteende som tidigare)
   useEffect(() => {
     let unsub = () => {}
     ;(async () => {
@@ -39,6 +40,7 @@ export default function MinaAnnonserPage() {
     return () => unsub()
   }, [router])
 
+  // — Hämta mina annonser
   useEffect(() => {
     if (auth !== 'authed') return
     void fetchAll()
@@ -54,11 +56,13 @@ export default function MinaAnnonserPage() {
     userId: string | null,
     email: string | null
   ) {
+    // Pröva vanliga ägarkolumner; hoppa över saknade kolumner utan att krascha
     const candidates: Array<{ col: string; val: string | null }> = [
       { col: 'created_by', val: userId },
-      { col: 'owner_id', val: userId },
-      { col: 'user_id', val: userId },
+      { col: 'owner_id',   val: userId },
+      { col: 'user_id',    val: userId },
       { col: 'contact_email', val: email },
+      { col: 'email',         val: email },
     ]
 
     for (const c of candidates) {
@@ -77,12 +81,54 @@ export default function MinaAnnonserPage() {
       if (Array.isArray(data) && data.length > 0) return data
     }
 
+    // Fallback: läs det som RLS ändå tillåter
     const { data, error } = await (supabase as any)
       .from(table as any)
       .select('id, title, created_at' as any)
       .order('created_at', { ascending: false } as any)
     if (error) throw error
     return data ?? []
+  }
+
+  // NY: hämta från public.listings (där dina poster finns)
+  async function fetchFromListings(userId: string | null, email: string | null) {
+    // Försök i första hand på user_id (kolumnen finns enligt ditt schema)
+    if (userId) {
+      const { data, error } = await (supabase as any)
+        .from('listings' as any)
+        .select('id, kind, title, created_at, user_id' as any)
+        .eq('user_id' as any, userId as any)
+        .order('created_at', { ascending: false } as any)
+
+      if (error && !isMissingColumn(error)) throw error
+      if (Array.isArray(data) && data.length > 0) return data
+    }
+
+    // Fallback: prova e-postkolumner om de råkar finnas
+    const emailCols = ['contact_email', 'email']
+    for (const col of emailCols) {
+      if (!email) continue
+      const { data, error } = await (supabase as any)
+        .from('listings' as any)
+        .select('id, kind, title, created_at' as any)
+        .eq(col as any, email as any)
+        .order('created_at', { ascending: false } as any)
+
+      if (error) {
+        if (isMissingColumn(error)) continue
+        throw error
+      }
+      if (Array.isArray(data) && data.length > 0) return data
+    }
+
+    // Slutlig fallback (om RLS tillåter): läs allt, vi filtrerar i klienten.
+    const { data, error } = await (supabase as any)
+      .from('listings' as any)
+      .select('id, kind, title, created_at, user_id' as any)
+      .order('created_at', { ascending: false } as any)
+    if (error) throw error
+    // Filtrera på userId om möjligt
+    return (data ?? []).filter((r: any) => !userId || r?.user_id === userId)
   }
 
   async function fetchAll() {
@@ -94,8 +140,12 @@ export default function MinaAnnonserPage() {
       const userId = udata.user?.id ?? null
       const email = udata.user?.email ?? null
 
-      const sale = await fetchForTable('annonser', userId, email)
+      // Tidigare två tabeller
+      const sale = await fetchForTable('annonser',  userId, email)
       const rent = await fetchForTable('uthyrning', userId, email)
+
+      // NY: även från listings
+      const lst = await fetchFromListings(userId, email)
 
       const merged: Item[] = [
         ...(sale ?? []).map((r: any) => ({
@@ -112,6 +162,14 @@ export default function MinaAnnonserPage() {
           kind: 'rent' as const,
           table: 'uthyrning' as const,
         })),
+        ...(lst ?? []).map((r: any) => ({
+          id: String(r.id),
+          title: r?.title ?? null,
+          created_at: String(r?.created_at),
+          // listings.kind kan vara 'SALE'/'RENT' eller redan lowercase
+          kind: (String(r?.kind || '').toLowerCase() === 'rent' ? 'rent' : 'sale') as 'sale' | 'rent',
+          table: 'listings' as const,
+        })),
       ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
       setItems(merged)
@@ -122,7 +180,7 @@ export default function MinaAnnonserPage() {
     }
   }
 
-  // ENDY: endast denna funktion är ändrad – nu anropas vår API-route
+  // OBS: Delete för 'listings' aktiveras i nästa steg (API-route + bildrensning).
   async function handleDelete(item: Item) {
     const ok = confirm('Vill du ta bort den här annonsen? Alla bilder raderas. Detta går inte att ångra.')
     if (!ok) return
@@ -197,18 +255,35 @@ export default function MinaAnnonserPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Gå till annons */}
                   <a
-                    href={it.table === 'annonser' ? `/annonser/${it.id}` : `/uthyrning/${it.id}`}
+                    href={
+                      it.table === 'annonser'
+                        ? `/annonser/${it.id}`
+                        : it.table === 'uthyrning'
+                        ? `/uthyrning/${it.id}`
+                        : `/annons/${it.id}` /* listings */
+                    }
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Gå till annons
                   </a>
+
+                  {/* Redigera */}
                   <a
-                    href={it.table === 'annonser' ? `/annonser/${it.id}/redigera` : `/uthyrning/${it.id}/redigera`}
+                    href={
+                      it.table === 'annonser'
+                        ? `/annonser/${it.id}/redigera`
+                        : it.table === 'uthyrning'
+                        ? `/uthyrning/${it.id}/redigera`
+                        : `/annons/${it.id}/redigera` /* listings */
+                    }
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Redigera
                   </a>
+
+                  {/* Ta bort */}
                   <button
                     type="button"
                     onClick={() => handleDelete(it)}
