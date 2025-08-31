@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import {
   uploadListingImages,
@@ -106,7 +107,13 @@ const defaultState: FormState = {
 };
 
 export default function SkapaAnnonsSaljesPage() {
+  const router = useRouter();
+  const search = useSearchParams();
+  const editId = search.get('edit');
+  const isEdit = !!editId;
+
   const [form, setForm] = useState<FormState>(defaultState);
+  const [existingImages, setExistingImages] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -118,6 +125,76 @@ export default function SkapaAnnonsSaljesPage() {
     form.objekt === 'Fritidshus';
   const isPlot = form.objekt === 'Tomt';
   const isFarm = form.objekt === 'Gård/Skog';
+
+  // --- Hjälpare för prefill (DB -> formulär)
+  const boolToYesNo = (b: boolean | null): YesNo | '' => (b === true ? 'JA' : b === false ? 'NEJ' : '');
+  const boolToInclude = (b: boolean | null): IncludeOption | '' => (b === true ? 'INGAR' : b === false ? 'INGAR_EJ' : '');
+  const toStr = (n: number | null) => (n === null || n === undefined ? '' : String(n));
+
+  // --- Prefill om ?edit= finns
+  useEffect(() => {
+    if (!isEdit) return;
+    let cancelled = false;
+
+    (async () => {
+      const { data: { user }, error: uerr } = await supabase.auth.getUser();
+      if (uerr || !user) return;
+
+      const { data, error } = await supabase
+        .from('listings')
+        .select('*')
+        .eq('id', editId)
+        .single();
+
+      if (cancelled) return;
+      if (error || !data) return;
+      if (data.user_id !== user.id) return; // enkel ägarkontroll
+
+      setExistingImages(Array.isArray(data.image_urls) ? data.image_urls : []);
+
+      setForm({
+        title: data.title ?? '',
+        street: data.street ?? '',
+        zip: data.zip ?? '',
+        city: data.city ?? '',
+
+        objekt: (data.objekt ?? '') as Objekt,
+        upplåtelseform: (data.upplatelseform ?? '') as FormState['upplåtelseform'],
+        pris: toStr(data.price),
+
+        rum: toStr(data.room_count),
+        boarea: toStr(data.living_area_m2),
+        balkong: boolToYesNo(data.balcony),
+        vaning: toStr(data.floor),
+        hiss: boolToYesNo(data.elevator),
+
+        tomtarea: toStr(data.plot_area_m2),
+        uteplats: boolToYesNo(data.patio),
+        vaAnslutning: boolToYesNo(data.va_connection),
+        byggratt: data.building_rights ?? '',
+
+        forening: data.association ?? '',
+        energiklass: (data.energy_class ?? 'Ej specificerat') as any,
+        avgiftPerManad: toStr(data.fee_per_month),
+        prisPerKvm: toStr(data.price_per_m2),
+
+        el: boolToInclude(data.includes_electricity),
+        varme: boolToInclude(data.includes_heating),
+        vatten: boolToInclude(data.includes_water),
+        internet: boolToInclude(data.includes_internet),
+
+        contactFirstName: data.contact_first_name ?? '',
+        contactLastName:  data.contact_last_name ?? '',
+        contactPhone:      data.contact_phone ?? '',
+        contactEmail:      data.contact_email ?? '',
+
+        description: data.description ?? '',
+        images: [],
+      });
+    })();
+
+    return () => { cancelled = true; };
+  }, [isEdit, editId]);
 
   const requiredLabels = useMemo(() => {
     const base: Record<string, string> = {
@@ -187,11 +264,13 @@ export default function SkapaAnnonsSaljesPage() {
       const wc = state.description.trim().split(/\s+/).filter(Boolean).length;
       if (wc < 50) e.description = `Beskrivningen måste vara minst 50 ord (nu ${wc}).`;
 
-      if (!state.images || state.images.length < 1) e.images = 'Ladda upp minst 1 bild.';
+      // → vid redigering godkänner vi utan nya bilder om det redan finns bild-URL:er
+      const hasAnyImages = (state.images?.length ?? 0) > 0 || existingImages.length > 0;
+      if (!hasAnyImages) e.images = 'Ladda upp minst 1 bild.';
 
       return e;
     },
-    [requiredLabels]
+    [requiredLabels, existingImages.length]
   );
 
   const onChange = <K extends keyof FormState>(key: K, value: FormState[K]) => {
@@ -236,7 +315,12 @@ export default function SkapaAnnonsSaljesPage() {
       const { data: { user }, error: userErr } = await supabase.auth.getUser();
       if (userErr || !user) throw new Error('Du måste vara inloggad.');
 
-      const image_urls = await uploadListingImages(user.id, form.images);
+      // Ladda upp ev. nya bilder och kombinera med befintliga
+      let image_urls = [...existingImages];
+      if (form.images?.length) {
+        const uploaded = await uploadListingImages(user.id, form.images);
+        image_urls = [...image_urls, ...uploaded];
+      }
 
       const payload = {
         user_id: user.id,
@@ -284,9 +368,27 @@ export default function SkapaAnnonsSaljesPage() {
         status: 'published',
       };
 
-      const id = await insertListing(payload);
-      setSuccess('Annons publicerad! (ID: ' + id + ')');
-      window.location.href = `/annons/${id}`;
+      if (isEdit) {
+        // Uppdatera befintlig annons
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token;
+        const res = await fetch('/api/listings/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ id: editId, payload }),
+        });
+        if (!res.ok) throw new Error((await res.text()) || 'Kunde inte uppdatera annonsen.');
+        setSuccess('Annons uppdaterad!');
+        window.location.href = `/annons/${editId}`;
+      } else {
+        // Skapa ny (ursprungligt beteende)
+        const id = await insertListing(payload);
+        setSuccess('Annons publicerad! (ID: ' + id + ')');
+        window.location.href = `/annons/${id}`;
+      }
     } catch (err: any) {
       setErrors({ _global: err.message || 'Ett fel inträffade.' });
     } finally {
@@ -318,6 +420,7 @@ export default function SkapaAnnonsSaljesPage() {
           )}
         </header>
 
+        {/* ------------------------- FORMULÄR OFÖRÄNDRAT ------------------------- */}
         <form onSubmit={onSubmit} className="space-y-6">
           {/* Grundinfo */}
           <section>
@@ -675,7 +778,7 @@ export default function SkapaAnnonsSaljesPage() {
                 shadow-sm hover:bg-emerald-700 disabled:opacity-60
               "
             >
-              {submitting ? 'Publicerar…' : 'Publicera'}
+              {submitting ? (isEdit ? 'Uppdaterar…' : 'Publicerar…') : (isEdit ? 'Spara ändringar' : 'Publicera')}
             </button>
           </div>
         </form>
