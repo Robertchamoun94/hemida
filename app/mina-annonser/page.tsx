@@ -166,7 +166,7 @@ export default function MinaAnnonserPage() {
 
   // ENDA ändringen här: skicka med access token i Authorization-headern
   async function handleDelete(item: Item) {
-    const ok = confirm('Vill du ta bort den här annonsen? Alla bilder raderas. Detta går inte att ångra.')
+    const ok = confirm('Vill du ta bort den här annonsen? Detta går inte att ångra.')
     if (!ok) return
     try {
       const { data: sess } = await supabase.auth.getSession()
