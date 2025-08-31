@@ -10,7 +10,6 @@ const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY as string
 
-// Minimal JWT-dekodare för att hämta userId/email ur "sb-access-token"
 function decodeJwt(token: string): any | null {
   try {
     const [, payloadB64] = token.split('.')
@@ -22,13 +21,11 @@ function decodeJwt(token: string): any | null {
   }
 }
 
-// Samla alla publika Storage-URL:er från en rad (rekursivt)
 function collectImageUrls(row: any): string[] {
   const urls = new Set<string>()
   const visit = (v: any) => {
     if (!v) return
     if (typeof v === 'string') {
-      // Matchar: /storage/v1/object/public/<bucket>/<path>
       if (/\/storage\/v1\/object\/public\/[^/]+\/.+/.test(v)) urls.add(v)
       return
     }
@@ -40,15 +37,12 @@ function collectImageUrls(row: any): string[] {
       for (const x of Object.values(v)) visit(x)
     }
   }
-  // Vanliga fält först – fall tillbaka till att söka igenom hela raden
   visit(row?.image_urls ?? row?.images ?? row?.photos ?? row)
   return Array.from(urls)
 }
 
-// Typa admin som any för att undvika TS-mismatch mellan olika SupabaseClient-generics
 async function removeImages(admin: any, imageUrls: string[]) {
   const byBucket = new Map<string, string[]>()
-
   for (const u of imageUrls) {
     const m = u.match(/\/object\/public\/([^/]+)\/(.+)$/)
     if (!m) continue
@@ -57,7 +51,6 @@ async function removeImages(admin: any, imageUrls: string[]) {
     if (!byBucket.has(bucket)) byBucket.set(bucket, [])
     byBucket.get(bucket)!.push(path)
   }
-
   for (const [bucket, paths] of byBucket.entries()) {
     for (let i = 0; i < paths.length; i += 100) {
       const chunk = paths.slice(i, i + 100)
@@ -79,32 +72,34 @@ export async function POST(req: Request) {
       return new NextResponse('Felaktig request (id/table).', { status: 400 })
     }
 
-    // Läs användare ur cookie (sb-access-token)
-    const token = cookies().get('sb-access-token')?.value ?? null
-    const jwt = token ? decodeJwt(token) : null
+    // 1) Läs access token från Authorization-headern (klienten skickar den),
+    //    fallback till ev. sb-access-token-cookie om den finns.
+    const authHeader = req.headers.get('authorization') || ''
+    const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+    const cookieToken = cookies().get('sb-access-token')?.value ?? null
+    const token = bearer || cookieToken
+    if (!token) return new NextResponse('Inte inloggad.', { status: 401 })
+
+    const jwt = decodeJwt(token)
     const userId: string | null = jwt?.sub ?? null
     const email: string | null = (jwt?.email ?? jwt?.user_metadata?.email) ?? null
-    if (!userId && !email) {
-      return new NextResponse('Inte inloggad.', { status: 401 })
-    }
+    if (!userId && !email) return new NextResponse('Inte inloggad.', { status: 401 })
 
-    // Admin-klient (service role) för att läsa/radera oavsett RLS
+    // 2) Admin-klient (service role) för att läsa/radera oavsett RLS
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
-    // Läs raden
+    // 3) Läs raden
     const { data: row, error: readErr } = await admin.from(table).select('*').eq('id', id).single()
     if (readErr || !row) return new NextResponse('Annons hittades inte.', { status: 404 })
 
-    // Ägarskapskontroll per tabell
+    // 4) Ägarskapskontroll
     let emailOk = false
     let idOk = false
 
     if (table === 'listings') {
-      // listings har (enligt ditt schema) user_id, ev. inga kontakt-emailfält
       idOk = !!(userId && (row.user_id === userId || row.created_by === userId || row.owner_id === userId))
       emailOk = !!(email && (row.contact_email === email || row.email === email))
     } else {
-      // annonser/uthyrning: tillåt både id- och email-match om fälten finns
       idOk =
         !!(userId &&
           (row.created_by === userId || row.owner_id === userId || row.user_id === userId))
@@ -115,13 +110,13 @@ export async function POST(req: Request) {
       return new NextResponse('Du äger inte denna annons.', { status: 403 })
     }
 
-    // Bild-cleanup (om URL:er hittas)
+    // 5) Bild-cleanup
     const imageUrls = collectImageUrls(row)
     if (imageUrls.length > 0) {
       await removeImages(admin, imageUrls)
     }
 
-    // Radera DB-raden
+    // 6) Radera raden
     const { error: delErr } = await admin.from(table).delete().eq('id', id)
     if (delErr) {
       return new NextResponse(`Kunde inte ta bort annons: ${delErr.message}`, { status: 500 })

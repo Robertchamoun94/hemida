@@ -21,7 +21,6 @@ export default function MinaAnnonserPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // — Auth-kontroll (samma beteende som tidigare)
   useEffect(() => {
     let unsub = () => {}
     ;(async () => {
@@ -40,7 +39,6 @@ export default function MinaAnnonserPage() {
     return () => unsub()
   }, [router])
 
-  // — Hämta mina annonser
   useEffect(() => {
     if (auth !== 'authed') return
     void fetchAll()
@@ -56,7 +54,6 @@ export default function MinaAnnonserPage() {
     userId: string | null,
     email: string | null
   ) {
-    // Pröva vanliga ägarkolumner; hoppa över saknade kolumner utan att krascha
     const candidates: Array<{ col: string; val: string | null }> = [
       { col: 'created_by', val: userId },
       { col: 'owner_id',   val: userId },
@@ -81,7 +78,6 @@ export default function MinaAnnonserPage() {
       if (Array.isArray(data) && data.length > 0) return data
     }
 
-    // Fallback: läs det som RLS ändå tillåter
     const { data, error } = await (supabase as any)
       .from(table as any)
       .select('id, title, created_at' as any)
@@ -90,9 +86,7 @@ export default function MinaAnnonserPage() {
     return data ?? []
   }
 
-  // NY: hämta från public.listings (där dina poster finns)
   async function fetchFromListings(userId: string | null, email: string | null) {
-    // Försök i första hand på user_id (kolumnen finns enligt ditt schema)
     if (userId) {
       const { data, error } = await (supabase as any)
         .from('listings' as any)
@@ -103,8 +97,6 @@ export default function MinaAnnonserPage() {
       if (error && !isMissingColumn(error)) throw error
       if (Array.isArray(data) && data.length > 0) return data
     }
-
-    // Fallback: prova e-postkolumner om de råkar finnas
     const emailCols = ['contact_email', 'email']
     for (const col of emailCols) {
       if (!email) continue
@@ -113,21 +105,17 @@ export default function MinaAnnonserPage() {
         .select('id, kind, title, created_at' as any)
         .eq(col as any, email as any)
         .order('created_at', { ascending: false } as any)
-
       if (error) {
         if (isMissingColumn(error)) continue
         throw error
       }
       if (Array.isArray(data) && data.length > 0) return data
     }
-
-    // Slutlig fallback (om RLS tillåter): läs allt, vi filtrerar i klienten.
     const { data, error } = await (supabase as any)
       .from('listings' as any)
       .select('id, kind, title, created_at, user_id' as any)
       .order('created_at', { ascending: false } as any)
     if (error) throw error
-    // Filtrera på userId om möjligt
     return (data ?? []).filter((r: any) => !userId || r?.user_id === userId)
   }
 
@@ -140,12 +128,9 @@ export default function MinaAnnonserPage() {
       const userId = udata.user?.id ?? null
       const email = udata.user?.email ?? null
 
-      // Tidigare två tabeller
       const sale = await fetchForTable('annonser',  userId, email)
       const rent = await fetchForTable('uthyrning', userId, email)
-
-      // NY: även från listings
-      const lst = await fetchFromListings(userId, email)
+      const lst  = await fetchFromListings(userId, email)
 
       const merged: Item[] = [
         ...(sale ?? []).map((r: any) => ({
@@ -166,7 +151,6 @@ export default function MinaAnnonserPage() {
           id: String(r.id),
           title: r?.title ?? null,
           created_at: String(r?.created_at),
-          // listings.kind kan vara 'SALE'/'RENT' eller redan lowercase
           kind: (String(r?.kind || '').toLowerCase() === 'rent' ? 'rent' : 'sale') as 'sale' | 'rent',
           table: 'listings' as const,
         })),
@@ -180,16 +164,23 @@ export default function MinaAnnonserPage() {
     }
   }
 
-  // OBS: Delete för 'listings' aktiveras i nästa steg (API-route + bildrensning).
+  // ENDA ändringen här: skicka med access token i Authorization-headern
   async function handleDelete(item: Item) {
     const ok = confirm('Vill du ta bort den här annonsen? Alla bilder raderas. Detta går inte att ångra.')
     if (!ok) return
     try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token
+
       const res = await fetch('/api/ads/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ id: item.id, table: item.table }),
       })
+
       if (!res.ok) {
         const msg = await res.text()
         throw new Error(msg || 'Kunde inte ta bort annonsen.')
@@ -255,35 +246,30 @@ export default function MinaAnnonserPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Gå till annons */}
                   <a
                     href={
                       it.table === 'annonser'
                         ? `/annonser/${it.id}`
                         : it.table === 'uthyrning'
                         ? `/uthyrning/${it.id}`
-                        : `/annons/${it.id}` /* listings */
+                        : `/annons/${it.id}`
                     }
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Gå till annons
                   </a>
-
-                  {/* Redigera */}
                   <a
                     href={
                       it.table === 'annonser'
                         ? `/annonser/${it.id}/redigera`
                         : it.table === 'uthyrning'
                         ? `/uthyrning/${it.id}/redigera`
-                        : `/annons/${it.id}/redigera` /* listings */
+                        : `/annons/${it.id}/redigera`
                     }
                     className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Redigera
                   </a>
-
-                  {/* Ta bort */}
                   <button
                     type="button"
                     onClick={() => handleDelete(it)}
