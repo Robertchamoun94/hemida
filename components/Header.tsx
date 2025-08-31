@@ -81,17 +81,19 @@ export default function Header() {
         className="
           sticky top-0 z-40 w-full border-b backdrop-blur
           bg-[#1E3A8A] shadow-sm
+          overflow-visible
         "
       >
         <div
           className="
-            mx-auto max-w-6xl
-            px-3 py-2 md:px-4 md:py-2.5
-            flex items-center
+            mx-auto flex max-w-6xl items-center
+            px-3 py-2
+            md:px-4 md:py-2.5
+            overflow-visible
           "
         >
           {/* LOGO */}
-          <a href="/" className="flex items-center gap-2 shrink-0">
+          <a href="/" className="flex items-center gap-2">
             <div
               className="
                 grid h-7 w-7 place-items-center rounded-full border border-white text-white bg-[#1E3A8A]
@@ -115,19 +117,18 @@ export default function Header() {
           {/* Länkar + auth */}
           <nav
             className="
-              ml-auto flex items-center flex-nowrap overflow-x-auto
-              gap-1.5 md:gap-3 lg:gap-4
-              max-w-full md:max-w-none
+              ml-auto flex items-center
+              gap-2 md:gap-3 lg:gap-4
+              relative overflow-visible
             "
           >
             <a
               href="/salja"
               onClick={handleProtectedClick}
               className="
-                whitespace-nowrap leading-none shrink-0
+                whitespace-nowrap leading-none
                 rounded-lg border border-white
-                px-2 py-1 text-[12px]
-                md:px-3 md:py-1.5 md:text-sm
+                px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
                 font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
               "
             >
@@ -137,21 +138,21 @@ export default function Header() {
               href="/hyra-ut"
               onClick={handleProtectedClick}
               className="
-                whitespace-nowrap leading-none shrink-0
+                whitespace-nowrap leading-none
                 rounded-lg border border-white
-                px-2 py-1 text-[12px]
-                md:px-3 md:py-1.5 md:text-sm
+                px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
                 font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
               "
             >
               Hyra ut bostad
             </a>
 
-            {/* Auth */}
+            {/* Auth: loading => skeleton, authed => profilmeny, anon => Logga in */}
             {authState === 'loading' ? (
-              <div className="shrink-0">{AvatarPlaceholder}</div>
+              AvatarPlaceholder
             ) : authState === 'authed' ? (
-              <div className="shrink-0">
+              // ⬇⬇ Viktigt för dropdownen ⬇⬇
+              <div className="relative z-[60]">
                 <ProfileMenu />
               </div>
             ) : (
@@ -159,10 +160,9 @@ export default function Header() {
                 type="button"
                 onClick={() => setLoginOpen(true)}
                 className="
-                  whitespace-nowrap leading-none shrink-0
+                  whitespace-nowrap leading-none
                   rounded-lg border border-white
-                  px-2 py-1 text-[12px]
-                  md:px-3 md:py-1.5 md:text-sm
+                  px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
                   font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
                 "
               >
