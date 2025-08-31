@@ -87,11 +87,11 @@ export default function Header() {
           className="
             mx-auto max-w-6xl
             px-3 py-2 md:px-4 md:py-2.5
-            flex flex-col gap-2 md:flex-row md:items-center md:justify-between
+            flex items-center
           "
         >
           {/* LOGO */}
-          <a href="/" className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2 shrink-0">
             <div
               className="
                 grid h-7 w-7 place-items-center rounded-full border border-white text-white bg-[#1E3A8A]
@@ -115,18 +115,19 @@ export default function Header() {
           {/* Länkar + auth */}
           <nav
             className="
-              ml-0 md:ml-auto
-              flex w-full md:w-auto flex-wrap items-center
-              gap-2 md:gap-3 lg:gap-4
+              ml-auto flex items-center flex-nowrap overflow-x-auto
+              gap-1.5 md:gap-3 lg:gap-4
+              max-w-full md:max-w-none
             "
           >
             <a
               href="/salja"
               onClick={handleProtectedClick}
               className="
-                whitespace-nowrap leading-none
+                whitespace-nowrap leading-none shrink-0
                 rounded-lg border border-white
-                px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
+                px-2 py-1 text-[12px]
+                md:px-3 md:py-1.5 md:text-sm
                 font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
               "
             >
@@ -136,28 +137,32 @@ export default function Header() {
               href="/hyra-ut"
               onClick={handleProtectedClick}
               className="
-                whitespace-nowrap leading-none
+                whitespace-nowrap leading-none shrink-0
                 rounded-lg border border-white
-                px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
+                px-2 py-1 text-[12px]
+                md:px-3 md:py-1.5 md:text-sm
                 font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
               "
             >
               Hyra ut bostad
             </a>
 
-            {/* Auth: loading => skeleton (med ev. cachead avatar), authed => riktig profilmeny, anon => Logga in */}
+            {/* Auth */}
             {authState === 'loading' ? (
-              AvatarPlaceholder
+              <div className="shrink-0">{AvatarPlaceholder}</div>
             ) : authState === 'authed' ? (
-              <ProfileMenu />
+              <div className="shrink-0">
+                <ProfileMenu />
+              </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setLoginOpen(true)}
                 className="
-                  whitespace-nowrap leading-none
+                  whitespace-nowrap leading-none shrink-0
                   rounded-lg border border-white
-                  px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
+                  px-2 py-1 text-[12px]
+                  md:px-3 md:py-1.5 md:text-sm
                   font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
                 "
               >
