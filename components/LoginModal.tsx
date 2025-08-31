@@ -143,7 +143,7 @@ function SignupForm(p: { onToLogin: () => void }) {
             }
           })
           if (error) { setErr(error.message || 'Registrering misslyckades.'); return }
-          setMsg('Verifieringslänk skickad! Kontrollera din inkorg och bekräfta kontot. Hittar du inte mejlet? Titta även i Skräppost/Spam (eller fliken Kampanjer) och markera det som ”Inte skräppost”.')
+          setMsg('Verifieringslänk skickad! Kontrollera din inkorg och bekräfta kontot. Hittar du inte mejlet? Titta även i Skräppost/Spam”.')
         } catch (e: any) {
           setErr(e?.message || 'Ett fel uppstod vid registrering.')
         } finally {
