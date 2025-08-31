@@ -22,12 +22,13 @@ function decodeJwt(token: string): any | null {
   }
 }
 
-// Samla alla publika Storage-URL:er från en rad
+// Samla alla publika Storage-URL:er från en rad (rekursivt)
 function collectImageUrls(row: any): string[] {
   const urls = new Set<string>()
   const visit = (v: any) => {
     if (!v) return
     if (typeof v === 'string') {
+      // Matchar: /storage/v1/object/public/<bucket>/<path>
       if (/\/storage\/v1\/object\/public\/[^/]+\/.+/.test(v)) urls.add(v)
       return
     }
@@ -39,6 +40,7 @@ function collectImageUrls(row: any): string[] {
       for (const x of Object.values(v)) visit(x)
     }
   }
+  // Vanliga fält först – fall tillbaka till att söka igenom hela raden
   visit(row?.image_urls ?? row?.images ?? row?.photos ?? row)
   return Array.from(urls)
 }
@@ -72,7 +74,8 @@ export async function POST(req: Request) {
     }
 
     const { id, table } = await req.json().catch(() => ({}))
-    if (!id || !table || !['annonser', 'uthyrning'].includes(table)) {
+    const allowed = ['annonser', 'uthyrning', 'listings']
+    if (!id || !table || !allowed.includes(table)) {
       return new NextResponse('Felaktig request (id/table).', { status: 400 })
     }
 
@@ -81,6 +84,9 @@ export async function POST(req: Request) {
     const jwt = token ? decodeJwt(token) : null
     const userId: string | null = jwt?.sub ?? null
     const email: string | null = (jwt?.email ?? jwt?.user_metadata?.email) ?? null
+    if (!userId && !email) {
+      return new NextResponse('Inte inloggad.', { status: 401 })
+    }
 
     // Admin-klient (service role) för att läsa/radera oavsett RLS
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } })
@@ -89,11 +95,21 @@ export async function POST(req: Request) {
     const { data: row, error: readErr } = await admin.from(table).select('*').eq('id', id).single()
     if (readErr || !row) return new NextResponse('Annons hittades inte.', { status: 404 })
 
-    // Ägarskapskontroll: e-post eller user-id på vanliga kolumner (om de finns)
-    const emailOk = email && (row.contact_email === email || row.email === email)
-    const idOk =
-      userId &&
-      (row.created_by === userId || row.owner_id === userId || row.user_id === userId)
+    // Ägarskapskontroll per tabell
+    let emailOk = false
+    let idOk = false
+
+    if (table === 'listings') {
+      // listings har (enligt ditt schema) user_id, ev. inga kontakt-emailfält
+      idOk = !!(userId && (row.user_id === userId || row.created_by === userId || row.owner_id === userId))
+      emailOk = !!(email && (row.contact_email === email || row.email === email))
+    } else {
+      // annonser/uthyrning: tillåt både id- och email-match om fälten finns
+      idOk =
+        !!(userId &&
+          (row.created_by === userId || row.owner_id === userId || row.user_id === userId))
+      emailOk = !!(email && (row.contact_email === email || row.email === email))
+    }
 
     if (!emailOk && !idOk) {
       return new NextResponse('Du äger inte denna annons.', { status: 403 })
