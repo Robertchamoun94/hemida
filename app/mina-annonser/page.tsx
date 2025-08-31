@@ -1,42 +1,37 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
-type Ad = {
+type AuthState = 'checking' | 'authed' | 'anon'
+
+type Item = {
   id: string
-  title?: string
-  rubrik?: string
-  address?: string
-  ort?: string
-  price?: number
-  hyra?: number
-  created_at?: string
-  status?: string
+  title: string | null
+  created_at: string
+  kind: 'sale' | 'rent'
   table: 'annonser' | 'uthyrning'
 }
 
 export default function MinaAnnonserPage() {
   const router = useRouter()
-  const [checkedAuth, setCheckedAuth] = useState(false)
-  const [uid, setUid] = useState<string | null>(null)
+  const [auth, setAuth] = useState<AuthState>('checking')
+  const [items, setItems] = useState<Item[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const [ads, setAds] = useState<Ad[]>([])
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState<string | null>(null)
-
-  // Auth-vakt
+  // — Auth-kontroll (samma beteende som tidigare)
   useEffect(() => {
     let unsub = () => {}
     ;(async () => {
       const { data } = await supabase.auth.getSession()
       if (!data.session) {
+        setAuth('anon')
         router.replace('/')
         return
       }
-      setUid(data.session.user.id)
-      setCheckedAuth(true)
+      setAuth('authed')
       const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
         if (!s) router.replace('/')
       })
@@ -45,88 +40,68 @@ export default function MinaAnnonserPage() {
     return () => unsub()
   }, [router])
 
-  const load = useCallback(
-    async (userId: string) => {
-      setLoading(true)
-      setErr(null)
-
-      const tables: Array<'annonser' | 'uthyrning'> = ['annonser', 'uthyrning']
-      const collected: Ad[] = []
-
-      for (const table of tables) {
-        let fetched: any[] | null = null
-
-        // 1) Försök enkel hämtning (ordnad)
-        const first = await (supabase as any)
-          .from(table as any)
-          .select('*')
-          .order('created_at', { ascending: false })
-
-        if (!first.error) {
-          fetched = first.data ?? []
-        }
-
-        // 2) Om tomt/behörighet – försök filtrera på tänkbara user-id-kolumner
-        if (!fetched || fetched.length === 0) {
-          const candidateKeys = ['user_id', 'owner_id', 'profile_id', 'created_by', 'author_id']
-          for (const key of candidateKeys) {
-            const { data: dataByKey, error: errByKey } = await (supabase as any)
-              .from(table as any)
-              .select('*')
-              .eq(key as any, userId)
-              .order('created_at', { ascending: false })
-            if (!errByKey) {
-              fetched = dataByKey ?? []
-              break
-            }
-          }
-        }
-
-        // 3) Mappa till visningsformat
-        if (fetched && fetched.length) {
-          for (const r of fetched) {
-            // visa publicerade/aktiva (om statusfält existerar)
-            if (r.status && !['published', 'active'].includes(String(r.status))) continue
-            collected.push({
-              id: r.id,
-              title: r.title ?? r.rubrik ?? r.ad_title,
-              rubrik: r.rubrik,
-              address: r.address ?? r.adress,
-              ort: r.city ?? r.ort,
-              price: r.price ?? r.pris,
-              hyra: r.rent ?? r.hyra,
-              created_at: r.created_at,
-              status: r.status ?? r.state,
-              table,
-            })
-          }
-        }
-      }
-
-      setAds(collected)
-      setLoading(false)
-    },
-    []
-  )
-
+  // — Hämta mina annonser (både till salu & uthyrning)
   useEffect(() => {
-    if (uid) load(uid)
-  }, [uid, load])
+    if (auth !== 'authed') return
+    void fetchAll()
+  }, [auth])
 
-  const onDelete = async (ad: Ad) => {
-    if (!confirm('Ta bort den här annonsen?')) return
-    const { error } = await (supabase as any)
-      .from(ad.table as any)
-      .delete()
-      .eq('id', ad.id)
-    if (error) {
-      alert(error.message)
-      return
+  async function fetchAll() {
+    setLoading(true)
+    setError(null)
+    try {
+      // Till salu
+      const { data: sale, error: e1 } = await supabase
+        .from('annonser')
+        .select('id, title, created_at')
+        .order('created_at', { ascending: false })
+      if (e1) throw e1
+
+      // Uthyres
+      const { data: rent, error: e2 } = await supabase
+        .from('uthyrning')
+        .select('id, title, created_at')
+        .order('created_at', { ascending: false })
+      if (e2) throw e2
+
+      const merged: Item[] = [
+        ...(sale ?? []).map((r) => ({
+          id: String(r.id),
+          title: (r as any).title ?? null,
+          created_at: String((r as any).created_at),
+          kind: 'sale' as const,
+          table: 'annonser' as const,
+        })),
+        ...(rent ?? []).map((r) => ({
+          id: String(r.id),
+          title: (r as any).title ?? null,
+          created_at: String((r as any).created_at),
+          kind: 'rent' as const,
+          table: 'uthyrning' as const,
+        })),
+      ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+
+      setItems(merged)
+    } catch (err: any) {
+      setError(err?.message || 'Kunde inte hämta dina annonser.')
+    } finally {
+      setLoading(false)
     }
-    setAds((prev) => prev.filter((x) => !(x.id === ad.id && x.table === ad.table)))
   }
 
-  if (!checkedAuth) {
+  async function handleDelete(item: Item) {
+    const ok = confirm('Vill du ta bort den här annonsen? Detta går inte att ångra.')
+    if (!ok) return
+    const { error } = await supabase.from(item.table).delete().eq('id', item.id)
+    if (error) {
+      alert(error.message || 'Kunde inte ta bort annonsen.')
+      return
+    }
+    // Uppdatera listan
+    await fetchAll()
+  }
+
+  if (auth === 'checking') {
     return (
       <main className="mx-auto max-w-md p-6">
         <div className="bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5 border border-slate-300 rounded-3xl p-6">
@@ -136,53 +111,62 @@ export default function MinaAnnonserPage() {
     )
   }
 
+  if (auth === 'anon') return null
+
   return (
-    <main className="mx-auto max-w-3xl p-6">
+    <main className="mx-auto max-w-2xl p-6">
       <div className="bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5 border border-slate-300 rounded-3xl p-6">
-        <h1 className="text-lg font-semibold mb-3">Mina annonser</h1>
+        <h1 className="text-lg font-semibold mb-2">Mina annonser</h1>
+
+        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
 
         {loading ? (
           <p className="text-slate-700">Hämtar dina annonser…</p>
-        ) : err ? (
-          <p className="text-red-600">{err}</p>
-        ) : ads.length === 0 ? (
+        ) : items.length === 0 ? (
           <p className="text-slate-700">Du har inga publicerade annonser ännu.</p>
         ) : (
-          <ul className="space-y-3">
-            {ads.map((ad) => (
+          <ul className="mt-3 space-y-3">
+            {items.map((it) => (
               <li
-                key={`${ad.table}-${ad.id}`}
-                className="border border-slate-200 rounded-xl p-4 flex items-start justify-between gap-4"
+                key={`${it.table}_${it.id}`}
+                className="rounded-2xl border border-slate-200 p-4 flex items-start justify-between gap-3"
               >
                 <div>
-                  <p className="font-semibold">
-                    {ad.title || ad.rubrik || 'Annons utan rubrik'}
-                    <span className="ml-2 text-xs rounded-full px-2 py-0.5 border border-slate-300 text-slate-600">
-                      {ad.table === 'annonser' ? 'Till salu' : 'Uthyres'}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        it.kind === 'sale'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-sky-50 text-sky-700 border border-sky-200'
+                      }`}
+                    >
+                      {it.kind === 'sale' ? 'Till salu' : 'Uthyres'}
                     </span>
-                  </p>
-                  {(ad.address || ad.ort) && (
-                    <p className="text-sm text-slate-600">
-                      {(ad.address || '') + (ad.ort ? (ad.address ? ', ' : '') + ad.ort : '')}
-                    </p>
-                  )}
-                  <p className="text-sm text-slate-600">
-                    {ad.price ? `${ad.price} kr` : ad.hyra ? `${ad.hyra} kr/mån` : null}
-                  </p>
+                    <span className="text-[12px] text-slate-500">
+                      {new Date(it.created_at).toLocaleDateString('sv-SE', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                  </div>
+                  <div className="mt-1 font-medium text-slate-900">
+                    {it.title || 'Annons utan titel'}
+                  </div>
                 </div>
 
-                <div className="flex gap-2">
-                  <button
-                    className="rounded-lg border px-3 py-1.5 text-sm font-semibold text-[#1E3A8A] border-[#1E3A8A] hover:bg-[#1E3A8A] hover:text-white"
-                    onClick={() =>
-                      router.push(ad.table === 'annonser' ? `/salja?edit=${ad.id}` : `/hyra-ut?edit=${ad.id}`)
-                    }
+                <div className="flex items-center gap-2">
+                  {/* Justera länkarna om du har andra redigeringsrutter */}
+                  <a
+                    href={it.table === 'annonser' ? `/annonser/${it.id}/redigera` : `/uthyrning/${it.id}/redigera`}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                   >
                     Redigera
-                  </button>
+                  </a>
                   <button
-                    className="rounded-lg border px-3 py-1.5 text-sm font-semibold text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
-                    onClick={() => onDelete(ad)}
+                    type="button"
+                    onClick={() => handleDelete(it)}
+                    className="rounded-lg border border-red-300 px-3 py-1.5 text-[13px] font-semibold text-red-700 hover:bg-red-50"
                   >
                     Ta bort
                   </button>
