@@ -85,9 +85,9 @@ export default function Header() {
       >
         <div
           className="
-            mx-auto flex max-w-6xl items-center
-            px-3 py-2
-            md:px-4 md:py-2.5
+            mx-auto max-w-6xl
+            px-3 py-2 md:px-4 md:py-2.5
+            flex flex-col gap-2 md:flex-row md:items-center md:justify-between
           "
         >
           {/* LOGO */}
@@ -115,7 +115,8 @@ export default function Header() {
           {/* Länkar + auth */}
           <nav
             className="
-              ml-auto flex items-center
+              ml-0 md:ml-auto
+              flex w-full md:w-auto flex-wrap items-center
               gap-2 md:gap-3 lg:gap-4
             "
           >
