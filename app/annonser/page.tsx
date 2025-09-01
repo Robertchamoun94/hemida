@@ -58,6 +58,93 @@ function deAccent(s: string) {
     .replace(/ö/gi, 'o');
 }
 
+// --- NYTT: Län → kommuner (nycklarna är normaliserade med deAccent + lower) ---
+const COUNTY_TO_MUNICIPALITIES: Record<string, string[]> = {
+  'stockholms lan': [
+    'Botkyrka','Danderyd','Ekerö','Haninge','Huddinge','Järfälla','Lidingö','Nacka','Norrtälje',
+    'Nykvarn','Nynäshamn','Salem','Sigtuna','Sollentuna','Solna','Stockholm','Sundbyberg',
+    'Södertälje','Täby','Tyresö','Upplands-Bro','Upplands Väsby','Vallentuna','Vaxholm','Värmdö','Österåker'
+  ],
+  'uppsala lan': [
+    'Enköping','Heby','Håbo','Knivsta','Tierp','Uppsala','Älvkarleby','Östhammar'
+  ],
+  'sodermanlands lan': [
+    'Eskilstuna','Flen','Gnesta','Katrineholm','Nyköping','Oxelösund','Strängnäs','Trosa','Vingåker'
+  ],
+  'ostergotlands lan': [
+    'Boxholm','Finspång','Kinda','Linköping','Mjölby','Motala','Norrköping','Söderköping','Vadstena',
+    'Valdemarsvik','Ydre','Åtvidaberg','Ödeshög'
+  ],
+  'jonkopings lan': [
+    'Aneby','Eksjö','Gislaved','Gnosjö','Habo','Jönköping','Mullsjö','Nässjö','Sävsjö','Tranås',
+    'Vaggeryd','Vetlanda','Värnamo'
+  ],
+  'kronobergs lan': [
+    'Alvesta','Lessebo','Ljungby','Markaryd','Tingsryd','Uppvidinge','Växjö','Älmhult'
+  ],
+  'kalmar lan': [
+    'Borgholm','Emmaboda','Hultsfred','Högsby','Kalmar','Mönsterås','Mörbylånga','Nybro',
+    'Oskarshamn','Torsås','Vimmerby','Västervik'
+  ],
+  'gotlands lan': ['Gotland'],
+  'blekinge lan': ['Karlshamn','Karlskrona','Olofström','Ronneby','Sölvesborg'],
+  'skane lan': [
+    'Bjuv','Bromölla','Burlöv','Båstad','Eslöv','Helsingborg','Hässleholm','Hörby','Höör','Klippan',
+    'Kristianstad','Kävlinge','Landskrona','Lomma','Lund','Malmö','Osby','Perstorp','Simrishamn',
+    'Sjöbo','Skurup','Staffanstorp','Svalöv','Svedala','Tomelilla','Trelleborg','Vellinge','Ystad',
+    'Åstorp','Ängelholm','Örkelljunga','Östra Göinge','Höganäs'
+  ],
+  'hallands lan': ['Falkenberg','Halmstad','Hylte','Kungsbacka','Laholm','Varberg'],
+  'vastra gotalands lan': [
+    'Ale','Alingsås','Bengtsfors','Bollebygd','Borås','Dals-Ed','Essunga','Falköping','Färgelanda',
+    'Grästorp','Gullspång','Götene','Göteborg','Herrljunga','Hjo','Härryda','Karlsborg','Kungälv',
+    'Lerum','Lidköping','Lilla Edet','Lysekil','Mariestad','Mark','Mellerud','Munkedal','Mölndal',
+    'Orust','Partille','Skara','Skövde','Sotenäs','Stenungsund','Strömstad','Svenljunga','Tanum',
+    'Tibro','Tidaholm','Tjörn','Tranemo','Trollhättan','Töreboda','Uddevalla','Ulricehamn','Vara',
+    'Vårgårda','Vänersborg','Åmål','Öckerö'
+  ],
+  'varmlands lan': [
+    'Arvika','Eda','Filipstad','Forshaga','Grums','Hagfors','Hammarö','Karlstad','Kil','Kristinehamn',
+    'Munkfors','Storfors','Sunne','Säffle','Torsby','Årjäng'
+  ],
+  'orebro lan': [
+    'Askersund','Degerfors','Hallsberg','Hällefors','Karlskoga','Kumla','Laxå','Lekeberg','Lindesberg',
+    'Ljusnarsberg','Nora','Örebro'
+  ],
+  'vastmanlands lan': [
+    'Arboga','Fagersta','Hallstahammar','Kungsör','Köping','Norberg','Sala','Skinnskatteberg',
+    'Surahammar','Västerås'
+  ],
+  'dalarnas lan': [
+    'Avesta','Borlänge','Falun','Gagnef','Hedemora','Leksand','Ludvika','Malung-Sälen','Mora',
+    'Orsa','Rättvik','Smedjebacken','Säter','Vansbro','Älvdalen'
+  ],
+  'gavleborgs lan': [
+    'Bollnäs','Gävle','Hofors','Hudiksvall','Ljusdal','Nordanstig','Ockelbo','Ovanåker','Sandviken',
+    'Söderhamn'
+  ],
+  'vasternorrlands lan': [
+    'Härnösand','Kramfors','Sollefteå','Sundsvall','Timrå','Ånge','Örnsköldsvik'
+  ],
+  'jamtlands lan': [
+    'Berg','Bräcke','Härjedalen','Krokom','Ragunda','Strömsund','Åre','Östersund'
+  ],
+  'vasterbottens lan': [
+    'Bjurholm','Dorotea','Lycksele','Malå','Nordmaling','Norsjö','Robertsfors','Skellefteå','Sorsele',
+    'Storuman','Umeå','Vilhelmina','Vindeln','Vännäs','Åsele'
+  ],
+  'norrbottens lan': [
+    'Arjeplog','Arvidsjaur','Boden','Gällivare','Haparanda','Jokkmokk','Kalix','Kiruna','Luleå',
+    'Pajala','Piteå','Älvsbyn','Överkalix','Övertorneå'
+  ],
+};
+
+// returnerar kommunlistan om q är ett län, annars tom array
+function municipalitiesForCounty(freeText: string): string[] {
+  const key = deAccent(freeText.trim()).toLowerCase();
+  return COUNTY_TO_MUNICIPALITIES[key] ?? [];
+}
+
 function normalizeKind(input: string | null | undefined): KindTab {
   if (!input) return 'SALE';
   const t = deAccent(String(input).trim().toLowerCase());
@@ -257,10 +344,17 @@ export default function ListingsPage() {
         .eq('kind', _tab)           // visa bara rätt typ (SALE/RENT)
         .eq('status', 'published'); // visa bara publicerade
 
-      if (_q.trim()) {
+      // --- ENDA ÄNDRINGEN: county-expansion ---
+      const citiesFromCounty = municipalitiesForCounty(_q);
+      if (citiesFromCounty.length > 0) {
+        // Bygg OR med city.ilike.%Kommun%
+        const orParts = citiesFromCounty.map((m) => `city.ilike.%${m}%`);
+        query = query.or(orParts.join(','));
+      } else if (_q.trim()) {
         const s = `%${_q.trim()}%`;
         query = query.or(`city.ilike.${s},title.ilike.${s}`);
       }
+      // ---------------------------------------
 
       // Objektfilter (om inte "Alla")
       if (_objekt !== 'Alla') query = query.eq('objekt', _objekt);
