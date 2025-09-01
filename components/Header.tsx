@@ -93,7 +93,7 @@ export default function Header() {
           "
         >
           {/* LOGO */}
-          <a href="/" className="flex items-center gap-2">
+          <a href="/" className="flex items-center gap-2 max-[420px]:mr-1">
             <div
               className="
                 grid h-7 w-7 place-items-center rounded-full border border-white text-white bg-[#1E3A8A]
@@ -119,6 +119,7 @@ export default function Header() {
             className="
               ml-auto flex items-center
               gap-2 md:gap-3 lg:gap-4
+              max-[420px]:gap-1.5 max-[360px]:gap-1
               relative overflow-visible
             "
           >
@@ -126,9 +127,11 @@ export default function Header() {
               href="/salja"
               onClick={handleProtectedClick}
               className="
-                whitespace-nowrap leading-none
+                whitespace-nowrap leading-none flex-shrink-0
                 rounded-lg border border-white
                 px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
+                max-[420px]:text-[12px] max-[420px]:px-2.5 max-[420px]:py-1
+                max-[360px]:text-[11px] max-[360px]:px-2
                 font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
               "
             >
@@ -138,9 +141,11 @@ export default function Header() {
               href="/hyra-ut"
               onClick={handleProtectedClick}
               className="
-                whitespace-nowrap leading-none
+                whitespace-nowrap leading-none flex-shrink-0
                 rounded-lg border border-white
                 px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
+                max-[420px]:text-[12px] max-[420px]:px-2.5 max-[420px]:py-1
+                max-[360px]:text-[11px] max-[360px]:px-2
                 font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
               "
             >
@@ -160,9 +165,11 @@ export default function Header() {
                 type="button"
                 onClick={() => setLoginOpen(true)}
                 className="
-                  whitespace-nowrap leading-none
+                  whitespace-nowrap leading-none flex-shrink-0
                   rounded-lg border border-white
                   px-2.5 py-1 text-[13px] md:px-3 md:py-1.5 md:text-sm
+                  max-[420px]:text-[12px] max-[420px]:px-2.5 max-[420px]:py-1
+                  max-[360px]:text-[11px] max-[360px]:px-2
                   font-semibold text-white hover:bg-white hover:text-[#1E3A8A] transition
                 "
               >
