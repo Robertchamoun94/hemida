@@ -49,74 +49,66 @@ export default function MinaAnnonserPage() {
     return msg.includes('column') && msg.includes('does not exist')
   }
 
+  /**
+   * STRIKT hämtning för gamla tabeller:
+   *  - provar user_id, därefter created_by, därefter owner_id
+   *  - om kolumn saknas: hoppa vidare
+   *  - om inget finns: returnera []
+   *  - ALDRIG "hämta alla" som fallback
+   */
   async function fetchForTable(
     table: 'annonser' | 'uthyrning',
     userId: string | null,
-    email: string | null
+    _email: string | null
   ) {
-    const candidates: Array<{ col: string; val: string | null }> = [
+    if (!userId) return []
+
+    const candidates: Array<{ col: string; val: string }> = [
+      { col: 'user_id', val: userId },
       { col: 'created_by', val: userId },
-      { col: 'owner_id',   val: userId },
-      { col: 'user_id',    val: userId },
-      { col: 'contact_email', val: email },
-      { col: 'email',         val: email },
+      { col: 'owner_id', val: userId },
     ]
 
     for (const c of candidates) {
-      if (!c.val) continue
-      const query = (supabase as any)
-        .from(table as any)
-        .select('id, title, created_at' as any)
-        .eq(c.col as any, c.val as any)
-        .order('created_at', { ascending: false } as any)
+      try {
+        const { data, error } = await (supabase as any)
+          .from(table as any)
+          .select('id, title, created_at' as any)
+          .eq(c.col as any, c.val as any)
+          .order('created_at', { ascending: false } as any)
 
-      const { data, error } = await query
-      if (error) {
-        if (isMissingColumn(error)) continue
-        throw error
+        if (error) {
+          if (isMissingColumn(error)) continue
+          throw error
+        }
+        if (Array.isArray(data) && data.length > 0) return data
+      } catch (err: any) {
+        if (isMissingColumn(err)) continue
+        throw err
       }
-      if (Array.isArray(data) && data.length > 0) return data
     }
 
-    const { data, error } = await (supabase as any)
-      .from(table as any)
-      .select('id, title, created_at' as any)
-      .order('created_at', { ascending: false } as any)
-    if (error) throw error
-    return data ?? []
+    // Inget som matchade -> inga rader
+    return []
   }
 
-  async function fetchFromListings(userId: string | null, email: string | null) {
-    if (userId) {
-      const { data, error } = await (supabase as any)
-        .from('listings' as any)
-        .select('id, kind, title, created_at, user_id' as any)
-        .eq('user_id' as any, userId as any)
-        .order('created_at', { ascending: false } as any)
+  /**
+   * STRIKT hämtning för nya tabellen:
+   *  - Endast eq('user_id', userId)
+   *  - Ingen e-post-fallback
+   *  - Ingen "hämta alla" och filtrera i klienten
+   */
+  async function fetchFromListings(userId: string | null, _email: string | null) {
+    if (!userId) return []
 
-      if (error && !isMissingColumn(error)) throw error
-      if (Array.isArray(data) && data.length > 0) return data
-    }
-    const emailCols = ['contact_email', 'email']
-    for (const col of emailCols) {
-      if (!email) continue
-      const { data, error } = await (supabase as any)
-        .from('listings' as any)
-        .select('id, kind, title, created_at' as any)
-        .eq(col as any, email as any)
-        .order('created_at', { ascending: false } as any)
-      if (error) {
-        if (isMissingColumn(error)) continue
-        throw error
-      }
-      if (Array.isArray(data) && data.length > 0) return data
-    }
     const { data, error } = await (supabase as any)
       .from('listings' as any)
       .select('id, kind, title, created_at, user_id' as any)
+      .eq('user_id' as any, userId as any)
       .order('created_at', { ascending: false } as any)
+
     if (error) throw error
-    return (data ?? []).filter((r: any) => !userId || r?.user_id === userId)
+    return data ?? []
   }
 
   async function fetchAll() {
