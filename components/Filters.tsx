@@ -160,16 +160,22 @@ export default function Filters() {
   const pathname = usePathname()
 
   const [open, setOpen] = useState(true)
-  const [tab, setTab] = useState<'till_salu' | 'uthyres'>('till_salu')
 
-  // Håll fliken i synk med URL:en (SALE/RENT)
+  // === NEW: read initial tab from URL on first render to avoid flicker ===
+  const initialTab: 'till_salu' | 'uthyres' = (() => {
+    const k = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
+    return k === 'RENT' ? 'uthyres' : 'till_salu'
+  })()
+  const [tab, setTab] = useState<'till_salu' | 'uthyres'>(initialTab)
+
+  // Keep syncing if URL changes later
   useEffect(() => {
-    const kindRaw = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
-    if (kindRaw === 'RENT' && tab !== 'uthyres') setTab('uthyres')
-    else if (kindRaw === 'SALE' && tab !== 'till_salu') setTab('till_salu')
+    const k = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
+    const want: 'till_salu' | 'uthyres' = k === 'RENT' ? 'uthyres' : 'till_salu'
+    if (want !== tab) setTab(want)
   }, [searchParams, tab])
 
-  // Byta flik: på /annonser uppdaterar vi även URL:en så listningen växlar
+  // Byta flik (på /annonser uppdaterar vi även URL:en)
   const switchTab = (next: 'till_salu' | 'uthyres') => {
     setTab(next)
     if (pathname === '/annonser') {
@@ -338,7 +344,7 @@ export default function Filters() {
               <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500">▾</span>
             </div>
 
-            {/* RULLGARDIN under fältet */}
+            {/* RULLGARDIN */}
             {showSug && foldedQ && (matches.counties.length || matches.municipalities.length) ? (
               <div
                 className="mt-2 max-w-full md:max-w-[60%] rounded-xl border border-slate-300 bg-white shadow-sm max-h-64 overflow-auto"
