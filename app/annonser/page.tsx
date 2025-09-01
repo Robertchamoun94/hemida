@@ -110,8 +110,20 @@ function normalizeObjekt(input: string | null | undefined): string {
 export default function ListingsPage() {
   const searchParams = useSearchParams();
 
+  // 1) Sätt initial flik från URL SYNKRONT vid första render (innan Filters hinner mounta)
+  const initialTab: KindTab = (() => {
+    if (typeof window === 'undefined') return 'SALE';
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const raw = sp.get('kind') || sp.get('tab') || sp.get('mode');
+      return normalizeKind(raw);
+    } catch {
+      return 'SALE';
+    }
+  })();
+
   // filter-state (drivs av URL)
-  const [tab, setTab] = useState<KindTab>('SALE');
+  const [tab, setTab] = useState<KindTab>(initialTab);
   const [q, setQ] = useState('');
   const [objekt, setObjekt] = useState<string>('Alla');
   const [minPris, setMinPris] = useState('');
@@ -127,8 +139,29 @@ export default function ListingsPage() {
   const pageRef = useRef(0);
 
   /**
-   * Läs URL-parametrar och ladda om. Viktigt:
-   * - Om URL saknar "kind", behåll nuvarande flik (ingen auto-hopp).
+   * 2) Om URL saknar "kind", tvinga in den direkt (så att Filters inte kan "tappa" fliken).
+   * Körs även när searchParams ändras.
+   */
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const sp = url.searchParams;
+
+    const currentUrlKind = sp.get('kind') || sp.get('tab') || sp.get('mode');
+    const currentNorm = currentUrlKind ? normalizeKind(currentUrlKind) : null;
+
+    if (!currentNorm) {
+      sp.set('kind', tab);
+      const next = `${url.pathname}?${sp.toString()}`;
+      const currentRel = `${url.pathname}${url.search}`;
+      if (next !== currentRel) {
+        window.history.replaceState({}, '', next);
+      }
+    }
+  }, [searchParams, tab]);
+
+  /**
+   * 3) Läs URL-parametrar och ladda om. Om URL saknar "kind", behåll nuvarande flik.
    */
   useEffect(() => {
     const sp = new URLSearchParams(searchParams?.toString());
@@ -171,8 +204,8 @@ export default function ListingsPage() {
   }, [searchParams?.toString()]);
 
   /**
-   * Synka tillbaka aktiv flik till URL:en – se till att ?kind alltid finns.
-   * Gör det utan att orsaka onödiga history-rewrites.
+   * 4) Synka tillbaka aktiv flik till URL:en – se till att ?kind alltid finns och matchar fliken.
+   * Görs utan onödiga history-rewrites.
    */
   useLayoutEffect(() => {
     if (typeof window === 'undefined') return;
