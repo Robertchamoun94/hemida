@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Filters from '@/components/Filters';
@@ -153,6 +153,18 @@ export default function ListingsPage() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams?.toString()]);
+
+  // Håll URL:ens ?kind i synk med aktiv flik så Filters inte defaultar till SALE
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const current = sp.get('kind');
+    if (current !== tab) {
+      sp.set('kind', tab);
+      const newUrl = `${window.location.pathname}?${sp.toString()}`;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [tab]);
 
   type Overrides = {
     tab?: KindTab;
