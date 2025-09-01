@@ -49,9 +49,6 @@ export default function MinaAnnonserPage() {
     return msg.includes('column') && msg.includes('does not exist')
   }
 
-  /** Säker hämtning från äldre tabeller (annonser/uthyrning).
-   * Vi testar olika möjliga ägarkolumner. Om INGEN finns/ger träff -> returnera [].
-   * Aldrig en ofiltrerad SELECT. */
   async function fetchForTable(
     table: 'annonser' | 'uthyrning',
     userId: string | null,
@@ -81,29 +78,25 @@ export default function MinaAnnonserPage() {
       if (Array.isArray(data) && data.length > 0) return data
     }
 
-    // <— Här fanns tidigare en ofiltrerad SELECT. Den är borttagen.
-    return []
+    const { data, error } = await (supabase as any)
+      .from(table as any)
+      .select('id, title, created_at' as any)
+      .order('created_at', { ascending: false } as any)
+    if (error) throw error
+    return data ?? []
   }
 
-  /** Säker hämtning från nya `listings`.
-   * Kräv user_id = auth.uid(), ev. fallback till e-postkolumner – men alltid med filter.
-   * Ingen sista “select allt”. */
   async function fetchFromListings(userId: string | null, email: string | null) {
-    // Kräver inloggad användare; utan userId returnerar vi tomt
-    if (!userId) return []
-
-    // 1) Först user_id
-    {
+    if (userId) {
       const { data, error } = await (supabase as any)
         .from('listings' as any)
         .select('id, kind, title, created_at, user_id' as any)
         .eq('user_id' as any, userId as any)
         .order('created_at', { ascending: false } as any)
+
       if (error && !isMissingColumn(error)) throw error
       if (Array.isArray(data) && data.length > 0) return data
     }
-
-    // 2) Fallback via e-post (om du någon gång har sparat annonser med mail)
     const emailCols = ['contact_email', 'email']
     for (const col of emailCols) {
       if (!email) continue
@@ -118,9 +111,12 @@ export default function MinaAnnonserPage() {
       }
       if (Array.isArray(data) && data.length > 0) return data
     }
-
-    // <— Ingen ofiltrerad SELECT här heller.
-    return []
+    const { data, error } = await (supabase as any)
+      .from('listings' as any)
+      .select('id, kind, title, created_at, user_id' as any)
+      .order('created_at', { ascending: false } as any)
+    if (error) throw error
+    return (data ?? []).filter((r: any) => !userId || r?.user_id === userId)
   }
 
   async function fetchAll() {
@@ -168,7 +164,6 @@ export default function MinaAnnonserPage() {
     }
   }
 
-  // ENDA ändringen här: skicka med access token i Authorization-headern
   async function handleDelete(item: Item) {
     const ok = confirm('Vill du ta bort den här annonsen? Detta går inte att ångra.')
     if (!ok) return
@@ -197,9 +192,9 @@ export default function MinaAnnonserPage() {
 
   if (auth === 'checking') {
     return (
-      <main className="mx-auto max-w-md p-6">
-        <div className="bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5 border border-slate-300 rounded-3xl p-6">
-          <p className="text-slate-700">Laddar…</p>
+      <main className="mx-auto max-w-md p-4 md:p-6">
+        <div className="bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5 border border-slate-300 rounded-2xl md:rounded-3xl p-4 md:p-6">
+          <p className="text-slate-700 text-sm md:text-base">Laddar…</p>
         </div>
       </main>
     )
@@ -208,79 +203,81 @@ export default function MinaAnnonserPage() {
   if (auth === 'anon') return null
 
   return (
-    <main className="mx-auto max-w-2xl p-6">
-      <div className="bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5 border border-slate-300 rounded-3xl p-6">
-        <h1 className="text-lg font-semibold mb-2">Mina annonser</h1>
+    <main className="mx-auto max-w-2xl p-4 md:p-6">
+      <div className="bg-white/95 backdrop-blur shadow-2xl ring-1 ring-black/5 border border-slate-300 rounded-2xl md:rounded-3xl p-4 md:p-6">
+        <h1 className="text-base md:text-lg font-semibold mb-3 md:mb-2">Mina annonser</h1>
 
-        {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+        {error && <p className="text-red-600 text-xs md:text-sm mb-3">{error}</p>}
 
         {loading ? (
-          <p className="text-slate-700">Hämtar dina annonser…</p>
+          <p className="text-slate-700 text-sm">Hämtar dina annonser…</p>
         ) : items.length === 0 ? (
-          <p className="text-slate-700">Du har inga publicerade annonser ännu.</p>
+          <p className="text-slate-700 text-sm">Du har inga publicerade annonser ännu.</p>
         ) : (
-          <ul className="mt-3 space-y-3">
+          <ul className="mt-2 md:mt-3 space-y-3">
             {items.map((it) => (
               <li
                 key={`${it.table}_${it.id}`}
-                className="rounded-2xl border border-slate-200 p-4 flex items-start justify-between gap-3"
+                className="rounded-xl md:rounded-2xl border border-slate-200 p-3 md:p-4"
               >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        it.kind === 'sale'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-sky-50 text-sky-700 border border-sky-200'
-                      }`}
+                {/* Rad 1: chip + datum + actions (wrap på mobil) */}
+                <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                  <span
+                    className={`inline-flex items-center rounded-full px-2.5 md:px-3 py-0.5 text-[11px] md:text-[12px] font-semibold ${
+                      it.kind === 'sale'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-sky-50 text-sky-700 border border-sky-200'
+                    }`}
+                  >
+                    {it.kind === 'sale' ? 'Till salu' : 'Uthyres'}
+                  </span>
+
+                  <span className="text-[11px] md:text-[12px] text-slate-500">
+                    {new Date(it.created_at).toLocaleDateString('sv-SE', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+
+                  <div className="ml-auto flex flex-wrap gap-1.5 md:gap-2">
+                    <a
+                      href={
+                        it.table === 'annonser'
+                          ? `/annonser/${it.id}`
+                          : it.table === 'uthyrning'
+                          ? `/uthyrning/${it.id}`
+                          : `/annons/${it.id}`
+                      }
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-[12px] md:px-3 md:py-1.5 md:text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
                     >
-                      {it.kind === 'sale' ? 'Till salu' : 'Uthyres'}
-                    </span>
-                    <span className="text-[12px] text-slate-500">
-                      {new Date(it.created_at).toLocaleDateString('sv-SE', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </span>
-                  </div>
-                  <div className="mt-1 font-medium text-slate-900">
-                    {it.title || 'Annons utan titel'}
+                      Gå till annons
+                    </a>
+                    <a
+                      href={
+                        it.table === 'annonser'
+                          ? `/annonser/${it.id}/redigera`
+                          : it.table === 'uthyrning'
+                          ? `/uthyrning/${it.id}/redigera`
+                          : `/annons/${it.id}/redigera`
+                      }
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-[12px] md:px-3 md:py-1.5 md:text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Redigera
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(it)}
+                      className="rounded-lg border border-red-300 px-2.5 py-1 text-[12px] md:px-3 md:py-1.5 md:text-[13px] font-semibold text-red-700 hover:bg-red-50"
+                    >
+                      Ta bort
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <a
-                    href={
-                      it.table === 'annonser'
-                        ? `/annonser/${it.id}`
-                        : it.table === 'uthyrning'
-                        ? `/uthyrning/${it.id}`
-                        : `/annons/${it.id}`
-                    }
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Gå till annons
-                  </a>
-                  <a
-                    href={
-                      it.table === 'annonser'
-                        ? `/annonser/${it.id}/redigera`
-                        : it.table === 'uthyrning'
-                        ? `/uthyrning/${it.id}/redigera`
-                        : `/annons/${it.id}/redigera`
-                    }
-                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Redigera
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(it)}
-                    className="rounded-lg border border-red-300 px-3 py-1.5 text-[13px] font-semibold text-red-700 hover:bg-red-50"
-                  >
-                    Ta bort
-                  </button>
+                {/* Rad 2: titel – egen rad, bryts snyggt */}
+                <div className="mt-2 md:mt-2 font-medium text-slate-900 text-[15px] md:text-base leading-snug break-words">
+                  {it.title || 'Annons utan titel'}
                 </div>
               </li>
             ))}
