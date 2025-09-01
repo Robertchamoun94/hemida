@@ -161,19 +161,30 @@ export default function Filters() {
 
   const [open, setOpen] = useState(true)
 
-  // === NEW: read initial tab from URL on first render to avoid flicker ===
+  // Finns explicit kind-param i URL?
+  const hasKindParam =
+    Boolean(searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode'))
+
+  // Initiera flik:
+  // - På /annonser: läs från URL om kind finns, annars Till salu.
+  // - På andra sidor: alltid Till salu (användaren kan klicka fritt).
   const initialTab: 'till_salu' | 'uthyres' = (() => {
-    const k = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
-    return k === 'RENT' ? 'uthyres' : 'till_salu'
+    if (pathname === '/annonser' && hasKindParam) {
+      const k = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
+      return k === 'RENT' ? 'uthyres' : 'till_salu'
+    }
+    return 'till_salu'
   })()
   const [tab, setTab] = useState<'till_salu' | 'uthyres'>(initialTab)
 
-  // Keep syncing if URL changes later
+  // Synka flik från URL **endast** på /annonser **och** när kind-param finns
   useEffect(() => {
+    if (pathname !== '/annonser' || !hasKindParam) return
     const k = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
     const want: 'till_salu' | 'uthyres' = k === 'RENT' ? 'uthyres' : 'till_salu'
     if (want !== tab) setTab(want)
-  }, [searchParams, tab])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, hasKindParam, searchParams])
 
   // Byta flik (på /annonser uppdaterar vi även URL:en)
   const switchTab = (next: 'till_salu' | 'uthyres') => {
