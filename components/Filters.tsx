@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import {
   LayoutGrid,
   Home,
@@ -157,16 +157,27 @@ type Suggestion = { type: 'county' | 'municipality'; name: string }
 export default function Filters() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const pathname = usePathname()
 
   const [open, setOpen] = useState(true)
   const [tab, setTab] = useState<'till_salu' | 'uthyres'>('till_salu')
 
-  // ❗️Läs in ?kind= från URL och håll fliken i synk (utan att ändra layout eller annan logik)
+  // Håll fliken i synk med URL:en (SALE/RENT)
   useEffect(() => {
     const kindRaw = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
     if (kindRaw === 'RENT' && tab !== 'uthyres') setTab('uthyres')
     else if (kindRaw === 'SALE' && tab !== 'till_salu') setTab('till_salu')
   }, [searchParams, tab])
+
+  // Byta flik: på /annonser uppdaterar vi även URL:en så listningen växlar
+  const switchTab = (next: 'till_salu' | 'uthyres') => {
+    setTab(next)
+    if (pathname === '/annonser') {
+      const sp = new URLSearchParams(searchParams.toString())
+      sp.set('kind', next === 'till_salu' ? 'SALE' : 'RENT')
+      router.replace(`/annonser?${sp.toString()}`)
+    }
+  }
 
   // STATE
   const [query, setQuery] = useState('')
@@ -274,7 +285,7 @@ export default function Filters() {
         {/* Flikar */}
         <div className="flex gap-1 border-b border-slate-300">
           <button
-            onClick={() => setTab('till_salu')}
+            onClick={() => switchTab('till_salu')}
             className={[
               'flex-1 px-3 py-2 text-[13px] md:text-sm font-semibold rounded-t-3xl transition',
               tab === 'till_salu'
@@ -285,7 +296,7 @@ export default function Filters() {
             Till salu
           </button>
           <button
-            onClick={() => setTab('uthyres')}
+            onClick={() => switchTab('uthyres')}
             className={[
               'flex-1 px-3 py-2 text-[13px] md:text-sm font-semibold rounded-t-3xl transition',
               tab === 'uthyres'
