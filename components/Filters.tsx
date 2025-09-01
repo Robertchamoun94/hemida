@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   LayoutGrid,
   Home,
@@ -156,9 +156,17 @@ type Suggestion = { type: 'county' | 'municipality'; name: string }
 /* ------------------------ Komponent ------------------------ */
 export default function Filters() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [open, setOpen] = useState(true)
   const [tab, setTab] = useState<'till_salu' | 'uthyres'>('till_salu')
+
+  // ❗️Läs in ?kind= från URL och håll fliken i synk (utan att ändra layout eller annan logik)
+  useEffect(() => {
+    const kindRaw = (searchParams.get('kind') || searchParams.get('tab') || searchParams.get('mode') || '').toUpperCase()
+    if (kindRaw === 'RENT' && tab !== 'uthyres') setTab('uthyres')
+    else if (kindRaw === 'SALE' && tab !== 'till_salu') setTab('till_salu')
+  }, [searchParams, tab])
 
   // STATE
   const [query, setQuery] = useState('')
